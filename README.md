@@ -1,6 +1,8 @@
 # search on Ebay via API --> JSON
 Search products via keyword query and compare prices on [Ebay via API](https://developer.ebay.com/api-docs/buy/browse/overview.html).
 
+Developer account required: https://developer.ebay.com/develop/apis
+
 The script allows you to make the following requests to Ebay via the API and get the result in JSON format:
 
 ## 1. Search for products using the API:
@@ -17,3 +19,5 @@ https://developer.ebay.com/api-docs/buy/browse/resources/item/methods/getItem
 - category
 - condition of the goods (new / used ...)
 - product location
+- pictures
+- ....
