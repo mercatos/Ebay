@@ -1,0 +1,32 @@
+# https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: Python
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    - name: dependencies
+      run: |
+        python -mpip install --upgrade pip
+        python -mpip install --user --upgrade pytest
+        python -mpip install --user --upgrade -r requirements.txt
+    - name: test
+      run: |
+        pytest
