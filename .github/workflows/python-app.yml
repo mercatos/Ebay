@@ -1,4 +1,5 @@
 # https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+# https://docs.pytest.org/en/7.1.x/explanation/goodpractices.html#test-discovery
 
 name: Python
 
@@ -28,5 +29,8 @@ jobs:
         python -mpip install --user --upgrade pytest
         python -mpip install --user --upgrade -r requirements.txt
     - name: test
+      env:
+        EBAY_SANDBOX_ID: ${{ secrets.EBAY_SANDBOX_ID }}
+        EBAY_SANDBOX: ${{ secrets.EBAY_SANDBOX }}
       run: |
-        pytest
+        pytest -s
