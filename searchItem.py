@@ -5,22 +5,39 @@ import getCredentials
 import utils
 
 prod_url_search = 'https://api.ebay.com/buy/browse/v1/item/'
-sandbox_url_search = 'https://api.sandbox.ebay.com/buy/browse/v1/item_summary/search'
+sandbox_url_search = 'https://api.sandbox.ebay.com/buy/browse/v1/item'
 
-def getItemDetails(search_string, limit=15, offset=0, condition='New', buyingOption='FIXED_PRICE', deliveryCountry='US', epid=None):
+def getItemDetails(search_string, limit=15, offset=0, condition=None, buyingOption=None, deliveryCountry=None, epid=None):
   credentials = getCredentials.fetchCredentials()
   headers = {
     'Authorization': f"Bearer {credentials['access_token']}"
   }
-  fc = utils.getConditionId(condition)
   params = {
     'q': search_string, 
     'limit': limit, 
-    'offset': offset, 
-    'filter': 'conditionIds:{'+fc+'},buyingOptions:{'+buyingOption+'},deliveryCountry:'+deliveryCountry
+    'offset': offset
   }
+
+  filter = ''
+  comma = ''
+  if condition:
+    fc = utils.getConditionId(condition)
+    filter += 'conditionIds:{'+fc+'}'
+    comma = ','
+
+  if buyingOption:
+    filter += comma + 'buyingOptions:{'+buyingOption+'}'
+    comma = ','
+
+  if deliveryCountry:
+    filter += comma + 'deliveryCountry:'+deliveryCountry
+
+  if filter != '':
+    params['filter'] = filter
+
   if epid:
     params['epid'] = epid
+    
   response = requests.get(f"{sandbox_url_search}", 
     params=params,
     headers=headers
@@ -54,5 +71,7 @@ def getItemDetails(search_string, limit=15, offset=0, condition='New', buyingOpt
 # BEST_OFFER
 # CLASSIFIED_AD
 
-items, errors = getItemDetails('laptop', 15, 0, 'Used|Excellent - Refurbished', 'FIXED_PRICE', 'US')
-print(items, errors)
+
+if __name__ == "__main__":
+  items, errors = getItemDetails('laptop', 15, 0, 'Used|Excellent - Refurbished|Good|New', 'FIXED_PRICE', 'US')
+  print(items, errors)
