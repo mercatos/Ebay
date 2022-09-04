@@ -5,7 +5,7 @@ import base64
 
 subdomain = os.environ.get('SUBDOMAIN', 'api.sandbox.ebay.com')
 app_id = os.environ.get('APP_ID', '')
-secret = os.environ.get('SECTRET', '')
+secret = os.environ.get('SECRET', '')
 token_url = f'https://{subdomain}/identity/v1/oauth2/token'
 
 expiry_time = None

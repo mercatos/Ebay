@@ -6,7 +6,7 @@ import datetime
 import requests
 
 app_id = os.environ.get('APP_ID', '')
-secret = os.environ.get('SECTRET', '')
+secret = os.environ.get('SECRET', '')
 token_url = 'https://' + os.environ.get('SUBDOMAIN', 'api.sandbox.ebay.com') + '/identity/v1/oauth2/token'
 item_url = 'https://' + os.environ.get('SUBDOMAIN', 'api.sandbox.ebay.com') + '/buy/browse/v1/item/'
 
