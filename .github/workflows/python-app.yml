@@ -30,7 +30,8 @@ jobs:
         python -mpip install --user --upgrade -r requirements.txt
     - name: test
       env:
-        EBAY_SANDBOX_ID: ${{ secrets.EBAY_SANDBOX_ID }}
-        EBAY_SANDBOX: ${{ secrets.EBAY_SANDBOX }}
+        APP_ID: ${{ secrets.APP_ID }}
+        SECRET: ${{ secrets.SECRET }}
+        SUBDOMAIN: ${{ secrets.SUBDOMAIN }}
       run: |
         pytest -s
