@@ -43,7 +43,7 @@ def processDatabase(file_res):
       price = item.find('.//price').text
 
       product_list, errors = searchItem.getItemSummary(search_string="%s %s %s" % (manufacturer, model, prod_type),
-      limit=10, offset=0, fieldgroups='PRODUCT', return_raw=True, credentials=credentials)
+      limit=10, offset=0, fieldgroups='PRODUCT', return_raw=True)
 
       if product_list:
         ebay_elm = clone.find('.//Product[%s]/Ebay' % pos)
@@ -71,7 +71,7 @@ def processDatabase(file_res):
 
           cat_id_path = ''
           for cat in product_item['categories']:
-            cat_id_path += cat['categoryId']
+            cat_id_path += ',' + cat['categoryId']
 
           data['MarketplaceIDEnum'] = details['listingMarketplaceId'] if 'listingMarketplaceId' in details else ""
           data['ProductTitle'] = details['title'] if 'title' in details else ""

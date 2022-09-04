@@ -2,11 +2,12 @@ from distutils.log import error
 import warnings
 import requests
 import getCredentials
-import utils
+import utils, os
 
-prod_url_search = 'https://api.ebay.com/buy/browse/v1/item/'
-sandbox_url_search = 'https://api.sandbox.ebay.com/buy/browse/v1/item_summary/search'
-sandbox_url_item = 'https://api.sandbox.ebay.com/buy/browse/v1/item/'
+subdomain = os.environ.get('SUBDOMAIN', 'api.sandbox.ebay.com')
+
+search_url = f'https://{subdomain}/buy/browse/v1/item_summary/search'
+item_url = f'https://{subdomain}/buy/browse/v1/item/'
 
 def getItemSummary(search_string,
                     limit=15, 
@@ -15,10 +16,9 @@ def getItemSummary(search_string,
                     buyingOption=None,
                     deliveryCountry=None,
                     epid=None,
-                    credentials=None,
                     return_raw=False,
                     fieldgroups=None):
-  credentials = credentials or getCredentials.fetchCredentials()
+  credentials = getCredentials.fetchCredentials()
   headers = {
     'Authorization': f"Bearer {credentials['access_token']}"
   }
@@ -51,7 +51,7 @@ def getItemSummary(search_string,
   if fieldgroups:
     params['fieldgroups'] = 'PRODUCT'
     
-  response = requests.get(f"{sandbox_url_search}", 
+  response = requests.get(f"{search_url}",
     params=params,
     headers=headers
   )
@@ -83,13 +83,13 @@ def getItemSummary(search_string,
 
 
 
-def getItem(itemId, credentials=None):
-  credentials = credentials or getCredentials.fetchCredentials()
+def getItem(itemId):
+  credentials = getCredentials.fetchCredentials()
   headers = {
     'Authorization': f"Bearer {credentials['access_token']}"
   }
     
-  response = requests.get(f"{sandbox_url_item}" + itemId, 
+  response = requests.get(f"{item_url}" + itemId,
     headers=headers
   )
   response_json = response.json()
@@ -104,5 +104,5 @@ def getItem(itemId, credentials=None):
 
 
 if __name__ == "__main__":
-  items, errors = getItemSummary('laptop', 15, 0, 'Used|Excellent - Refurbished|Good', 'FIXED_PRICE', 'US')
+  items, errors = getItemSummary('laptop', 15, 0, 'Used|Excellent - Refurbished|Good|New', 'FIXED_PRICE', 'US')
   print(items, errors)

@@ -21,3 +21,13 @@ https://developer.ebay.com/api-docs/buy/browse/resources/item/methods/getItem
 - product location
 - pictures
 - ....
+
+# Configuration
+To run, the scripts require the following environment variables to be set"
+APP_ID The Ebay API or Sandbox API App ID
+SECTRET Ebay API or Sandbox API App Secret
+SUBDOMAIN this can either be api.ebay.com or api.sandbox.ebay.com. If left blank, api.sandbox.ebay.com is used
+
+For convinience, there is an example.env file in the repository. Make a copy and rename it to .env.
+Set the appropriate values.
+Also included is a file load_env.sh. Before running any command run `source load_env.sh`. That will set the variables
