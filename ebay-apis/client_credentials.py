@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import base64
 import os
-import traceback
+import datetime
 
 import requests
 
@@ -11,9 +11,9 @@ token_url = 'https://' + os.environ.get('SUBDOMAIN', 'api.sandbox.ebay.com') + '
 item_url = 'https://' + os.environ.get('SUBDOMAIN', 'api.sandbox.ebay.com') + '/buy/browse/v1/item/'
 
 LAST_TOKEN = None
+expiry_time = None
 def fetch_credentials():
-  # global expiry_time
-  global LAST_TOKEN, EBAY_CONF
+  global LAST_TOKEN, EBAY_CONF, expiry_time
 
   try:
     #check if last fetch is still having valid token

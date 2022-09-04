@@ -4,8 +4,7 @@ import client_credentials
 
 
 def fetch_item(item_id):
-  conf = client_credentials.pick_conf()
-  api_endpoint = conf['item_url']
+  api_endpoint = client_credentials.item_url
 
   credentials = client_credentials.fetch_credentials()
 
