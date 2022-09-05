@@ -31,3 +31,7 @@ SUBDOMAIN this can either be api.ebay.com or api.sandbox.ebay.com. If left blank
 For convinience, there is an example.env file in the repository. Make a copy and rename it to .env.
 Set the appropriate values.
 Also included is a file load_env.sh. Before running any command run `source load_env.sh`. That will set the variables
+
+#Unit tests
+Added the first unit test in the tests. Data for the test is a series of pickeled results from actual API requests.
+To install dependencies, use the requirements_dev.txt

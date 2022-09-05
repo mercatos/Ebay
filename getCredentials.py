@@ -4,8 +4,8 @@ import os
 import base64
 
 subdomain = os.environ.get('SUBDOMAIN', 'api.sandbox.ebay.com')
-app_id = os.environ.get('APP_ID', '')
-secret = os.environ.get('SECRET', '')
+app_id = os.environ.get('APP_ID', 'TEST_API_ID')
+secret = os.environ.get('SECRET', 'TEST_API_SECRET')
 token_url = f'https://{subdomain}/identity/v1/oauth2/token'
 
 expiry_time = None
@@ -30,6 +30,7 @@ def fetchCredentials():
     'scope': 'https://api.ebay.com/oauth/api_scope'
   }
   resp = requests.post(token_url, data=request_params, headers=headers)
+
   # resp_json is of the form {access_token, expires_in, token_type}
   resp_json = resp.json()
   expiry_time = datetime.datetime.now() + datetime.timedelta(0, int(resp_json['expires_in']))

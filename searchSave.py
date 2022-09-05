@@ -3,7 +3,6 @@ import argparse, os, searchItem, getCredentials
 from datetime import datetime, timezone
 
 def processDatabase(file_res):
-    credentials = getCredentials.fetchCredentials()
     known_items = {}
     clone = ET.parse(file_res)
     node_xml = """
@@ -31,7 +30,7 @@ def processDatabase(file_res):
 """
 
     file_name = os.path.abspath(file_res.name)
-    file_xml = file = open(file_name, 'rt').read().lower()
+    file_xml = file = open(file_name, 'r').read().lower()
     tree = ET.fromstring(file_xml)
 
     pos = 1
@@ -43,7 +42,7 @@ def processDatabase(file_res):
       price = item.find('.//price').text
 
       product_list, errors = searchItem.getItemSummary(search_string="%s %s %s" % (manufacturer, model, prod_type),
-      limit=10, offset=0, fieldgroups='PRODUCT', return_raw=True)
+      limit=10, offset=0, return_raw=True)
 
       if product_list:
         ebay_elm = clone.find('.//Product[%s]/Ebay' % pos)
@@ -63,7 +62,7 @@ def processDatabase(file_res):
           if product_item['itemId'] in known_items:
             details = known_items[product_item['itemId']]
           else:
-            details = searchItem.getItem(product_item['itemId'], credentials)
+            details = searchItem.getItem(product_item['itemId'])
             known_items[product_item['itemId']] = details
 
           if details == None:

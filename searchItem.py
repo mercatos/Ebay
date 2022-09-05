@@ -16,8 +16,7 @@ def getItemSummary(search_string,
                     buyingOption=None,
                     deliveryCountry=None,
                     epid=None,
-                    return_raw=False,
-                    fieldgroups=None):
+                    return_raw=False):
   credentials = getCredentials.fetchCredentials()
   headers = {
     'Authorization': f"Bearer {credentials['access_token']}"
@@ -47,9 +46,6 @@ def getItemSummary(search_string,
 
   if epid:
     params['epid'] = epid
-
-  if fieldgroups:
-    params['fieldgroups'] = 'PRODUCT'
     
   response = requests.get(f"{search_url}",
     params=params,
