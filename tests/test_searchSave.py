@@ -49,8 +49,8 @@ class SearchSaveTestCase(unittest.TestCase):
     output = re.sub("\<FoundDate>.*", '', file.read().strip())
     expected_output = re.sub("\<FoundDate>.*", '', self.expected_output.strip())
 
-    output = re.sub("\s", '', output)
-    expected_output = re.sub("\s", '', expected_output)
+    output = re.sub("(\s|\u180B|\u200B|\u200C|\u200D|\u2060|\uFEFF)+", '', output)
+    expected_output = re.sub("(\s|\u180B|\u200B|\u200C|\u200D|\u2060|\uFEFF)+", '', expected_output)
 
     self.assertEqual.__self__.maxDiff = None
     self.assertEqual(output, expected_output)
