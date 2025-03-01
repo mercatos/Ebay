@@ -1,3 +1,6 @@
+/docs
+/token_backups
+/.vscode/tasks.json
 __pycache__/
 .env
 .idea
