@@ -37,30 +37,26 @@ def retrieve_token():
     
     cu.execute("SELECT token FROM base_ebay.oce_kb_ebay_sites WHERE abbreviation = 'DE'")
     token_result = cu.fetchone()
-    token = token_result[0] if token_result else None
+    token = token_result[0]
     
-    oce_setting = None
     cu.execute("SELECT value FROM `oce_setting` WHERE `key` = 'ebay_general_settings'")
     oce_result = cu.fetchone()
-    if oce_result and oce_result[0]:
-        try:
-            settings = json.loads(oce_result[0])
-            general_settings = settings.get('general')
-            if not general_settings:
-                raise ValueError("Missing 'general' section in ebay_general_settings")
-                
-            app_id = general_settings.get('app_id')
-            cert_id = general_settings.get('cert_id')
-            
-            if not app_id or not cert_id:
-                raise ValueError("Missing app_id or cert_id in ebay_general_settings")
-            
-            oce_setting = {
-                'app_id': app_id,
-                'cert_id': cert_id
-            }
-        except (json.JSONDecodeError, AttributeError, TypeError) as e:
-            raise ValueError(f"Failed to parse oce_setting JSON: {e}")
+
+    settings = json.loads(oce_result[0])
+    general_settings = settings.get('general')
+    if not general_settings:
+        raise ValueError("Missing 'general' section in ebay_general_settings")
+    
+    app_id = general_settings.get('app_id')
+    cert_id = general_settings.get('cert_id')
+    
+    if not app_id or not cert_id:
+        raise ValueError("Missing app_id or cert_id in ebay_general_settings")
+    
+    oce_setting = {
+        'app_id': app_id,
+        'cert_id': cert_id
+    }
 
     retrieve_token._cache = (token, oce_setting)
     return retrieve_token._cache

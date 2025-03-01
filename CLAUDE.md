@@ -5,13 +5,13 @@
 ### Testing Scripts
 ```bash
 # Test eBay API client
-python cc-python.py
+python proto.py
 ```
 
 ### Development Commands
 
 ## Project Structure
-- `cc-python.py` - Main script for eBay API client credentials and token management
+- `proto.py` - eBay API client
 
 ## Coding Standards
 
