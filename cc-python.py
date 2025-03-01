@@ -61,9 +61,7 @@ def retrieve_token():
             }
         except (json.JSONDecodeError, AttributeError, TypeError) as e:
             raise ValueError(f"Failed to parse oce_setting JSON: {e}")
-    
-    co.close()
-    
+
     retrieve_token._cache = (token, oce_setting)
     return retrieve_token._cache
 
@@ -156,26 +154,21 @@ def refresh_token_using_refresh_token(site_abbr='DE'):
                 f.write(old_token_json)
             log(f"Backed up old token to {backup_file}")
                 
-            try:
-                co = get_db_connection()
-                cu = co.cursor()
-                
-                cu.execute(
-                    "UPDATE base_ebay.oce_kb_ebay_sites SET token = %s WHERE abbreviation = %s",
-                    (new_token_json, site_abbr)
-                )
-                co.commit()
-                log(f"Database update for site {site_abbr} commited")
-                
-                # Clear the cache to ensure the next retrieval gets the new token
-                if hasattr(retrieve_token, '_cache'):
-                    retrieve_token._cache = None
-                
-                co.close()
-                return new_token
-            except Exception as e:
-                log(f"Error connecting to database: {e}")
-                return new_token
+            co = get_db_connection()
+            cu = co.cursor()
+            
+            cu.execute(
+                "UPDATE base_ebay.oce_kb_ebay_sites SET token = %s WHERE abbreviation = %s",
+                (new_token_json, site_abbr)
+            )
+            co.commit()
+            log(f"Database update for site {site_abbr} commited")
+            
+            # Clear the cache to ensure the next retrieval gets the new token
+            if hasattr(retrieve_token, '_cache'):
+                retrieve_token._cache = None
+            
+            return new_token
         else:
             log(f"Token refresh failed: {response.status_code}")
             try:
@@ -200,7 +193,7 @@ def search_items(search_string, limit=5, access_token=None):
     
     if response.status_code == 401:
         error_text = response.text
-        log(f"Token expired error: {error_text}")
+        log(f"Auth error: {error_text}")
         log("Token appears to be expired, attempting refresh")
         new_token_info = refresh_token_using_refresh_token()
         
@@ -214,8 +207,12 @@ def search_items(search_string, limit=5, access_token=None):
     
     response_json = response.json()
     
+    if 'warnings' in response_json:
+        warnings = [warn.get('message', 'Unknown warning') for warn in response_json.get('warnings', [])]
+        log(f"eBay warnings: {warnings}")
+    
+    items = []
     if 'itemSummaries' in response_json:
-        items = []
         for item in response_json['itemSummaries']:
             items.append({
                 'title': item.get('title'),
@@ -224,15 +221,7 @@ def search_items(search_string, limit=5, access_token=None):
                 'currency': item.get('price', {}).get('currency'),
                 'url': item.get('itemWebUrl')
             })
-        return items
-    elif 'warnings' in response_json:
-        # cf. handling-error-messages.html.zst
-        warnings = [warn.get('message', 'Unknown warning') for warn in response_json.get('warnings', [])]
-        log(f"API warnings: {warnings}")
-        # Return empty results but don't throw since warnings are not fatal errors
-        return []
-    else:
-        return []
+    return items
 
 
 def test_token():
