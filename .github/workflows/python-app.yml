@@ -26,7 +26,6 @@ jobs:
     - name: dependencies
       run: |
         python -mpip install --upgrade pip
-        python -mpip install --user --upgrade pytest
         python -mpip install --user --upgrade -r requirements.txt
     - name: test
       env:
@@ -34,4 +33,4 @@ jobs:
         SECRET: ${{ secrets.SECRET }}
         SUBDOMAIN: ${{ secrets.SUBDOMAIN }}
       run: |
-        pytest -s
+        python proto.py

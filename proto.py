@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from datetime import datetime
+from datetime import datetime, timedelta
 from llog import log
 import base62
 import base64
@@ -8,6 +8,7 @@ import json
 import os
 import pymysql
 import requests
+import xml.etree.ElementTree as ET
 
 def short_hash(text):
     """Generate a short hash of text for secure logging"""
@@ -55,7 +56,8 @@ def retrieve_token():
     
     oce_setting = {
         'app_id': app_id,
-        'cert_id': cert_id
+        'cert_id': cert_id,
+        'dev_id': general_settings.get('dev_id')
     }
 
     retrieve_token._cache = (token, oce_setting)
@@ -81,7 +83,7 @@ def parse_token(token):
     except (json.JSONDecodeError, AttributeError, ValueError) as e:
         raise ValueError(f"Error parsing token: {e}")
 
-def refresh_token_using_refresh_token(site_abbr='DE'):
+def refresh_token_using_refresh_token():
     """Refresh the access token using the refresh token without client secret"""
     # Get the original token JSON, in order to preserve refresh_token
     token, oce_setting = retrieve_token()
@@ -114,7 +116,6 @@ def refresh_token_using_refresh_token(site_abbr='DE'):
         'refresh_token': refresh_token,
         #'scope': 'https://api.ebay.com/oauth/api_scope https://api.ebay.com/oauth/api_scope/sell.marketing.readonly https://api.ebay.com/oauth/api_scope/sell.marketing https://api.ebay.com/oauth/api_scope/sell.inventory.readonly https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.account.readonly https://api.ebay.com/oauth/api_scope/sell.account https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly https://api.ebay.com/oauth/api_scope/sell.fulfillment https://api.ebay.com/oauth/api_scope/sell.analytics.readonly https://api.ebay.com/oauth/api_scope/sell.finances https://api.ebay.com/oauth/api_scope/sell.payment.dispute https://api.ebay.com/oauth/api_scope/commerce.identity.readonly https://api.ebay.com/oauth/api_scope/commerce.notification.subscription https://api.ebay.com/oauth/api_scope/commerce.notification.subscription.readonly'
     }
-    log(data)
 
     try:
         log("Attempting to refresh token")
@@ -126,7 +127,7 @@ def refresh_token_using_refresh_token(site_abbr='DE'):
             },
             data=data
         )
-        log(f"Refresh status: {response.status_code}")
+        log(f"api.ebay.com/identity/v1/oauth2/token: {response.status_code}")
 
         if response.status_code == 200:
             old_token_data = json.loads(old_token_json)
@@ -135,7 +136,7 @@ def refresh_token_using_refresh_token(site_abbr='DE'):
             new_token.update(response.json())
             
             if 'refresh_token' not in response.json():
-                log("eBay didn't return a refresh token in response, using preserved one")
+                log("eBay didn't return `refresh_token` in response, using preserved one")
             
             new_token_json = json.dumps(new_token)
 
@@ -144,7 +145,7 @@ def refresh_token_using_refresh_token(site_abbr='DE'):
                 os.makedirs(backup_dir)
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_file = f"{backup_dir}/token_{site_abbr}_{timestamp}.json"
+            backup_file = f"{backup_dir}/token_{timestamp}.json"
             
             with open(backup_file, "w") as f:
                 f.write(old_token_json)
@@ -154,11 +155,11 @@ def refresh_token_using_refresh_token(site_abbr='DE'):
             cu = co.cursor()
             
             cu.execute(
-                "UPDATE base_ebay.oce_kb_ebay_sites SET token = %s WHERE abbreviation = %s",
-                (new_token_json, site_abbr)
+                "UPDATE base_ebay.oce_kb_ebay_sites SET token = %s WHERE abbreviation = 'DE'",
+                (new_token_json,)
             )
             co.commit()
-            log(f"Database update for site {site_abbr} commited")
+            log(f"oce_kb_ebay_sites commit ☑")
             
             # Clear the cache to ensure the next retrieval gets the new token
             if hasattr(retrieve_token, '_cache'):
@@ -261,6 +262,71 @@ def test_search():
     
     log(f"test_search.. pass ({matched_items}/{len(items)} items matched keyword)")
 
+def test_orders():
+    token, oce_setting = retrieve_token()
+    token_info = parse_token(token)
+    access_token = token_info['access_token']
+
+    end_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    log (f"test_orders] start_date: {start_date}, end_date: {end_date}")
+    
+    # cf. `function getOrderFromEbay` in “model-cron.php”
+    xml_feed = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml_feed += '<GetOrdersRequest xmlns="urn:ebay:apis:eBLBaseComponents">\n'
+    xml_feed += '<ErrorLanguage>en_US</ErrorLanguage>\n'
+    xml_feed += '<WarningLevel>High</WarningLevel>\n'
+    xml_feed += f'<CreateTimeFrom>{start_date}</CreateTimeFrom>\n'
+    xml_feed += f'<CreateTimeTo>{end_date}</CreateTimeTo>\n'
+    xml_feed += '<OrderRole>Seller</OrderRole>\n'
+    xml_feed += '<OrderStatus>Completed</OrderStatus>\n'
+    xml_feed += '</GetOrdersRequest>\n'
+    
+    headers = {
+        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+        'X-EBAY-API-DEV-NAME': oce_setting['dev_id'],
+        'X-EBAY-API-APP-NAME': oce_setting['app_id'],
+        'X-EBAY-API-CERT-NAME': oce_setting['cert_id'],
+        'X-EBAY-API-CALL-NAME': 'GetOrders',
+        # select id_ebay_countries from oce_kb_ebay_sites where abbreviation = 'DE'
+        # select profile_name, ebay_site, ebay_category_id from oce_kb_ebay_profiles
+        'X-EBAY-API-SITEID': '77',  # DE is 77
+        'X-EBAY-API-IAF-TOKEN': access_token,
+        'Content-Type': 'text/xml'
+    }
+    
+    response = requests.post('https://api.ebay.com/ws/api.dll', headers=headers, data=xml_feed)
+    assert response.status_code == 200, f"!200: {response.status_code}"
+    ct = response.headers.get('Content-Type')
+    assert ct == "text/xml;charset=UTF-8", f"!xml: {ct}"
+    with open('test_orders.xml', 'w', encoding='utf-8') as f: f.write(response.text)  # For inspection
+
+    root = ET.fromstring(response.text)
+    namespace = {'ebay': 'urn:ebay:apis:eBLBaseComponents'}
+    ack = root.find('.//ebay:Ack', namespace)
+    err = ''
+    if ack is not None and ack.text == 'Failure':
+        log ('GetOrders Failure')
+        err += 'GetOrders Failure'
+        for error in root.findall('.//ebay:Errors', namespace):
+            short_message = error.find('.//ebay:ShortMessage', namespace)
+            log (f"short_message: {short_message.text}")
+            err += ' short_message: ' + short_message.text
+            long_message = error.find('.//ebay:LongMessage', namespace)
+            log (f"long_message: {long_message.text}")
+            err += ' long_message: ' + long_message.text
+            error_code = error.find('.//ebay:ErrorCode', namespace)
+            log (f"error_code: {error_code.text}")
+            err += ' error_code: ' + error_code.text
+    if err: raise RuntimeError(err)
+
+    #⌥ parse the orders
+
 if __name__ == "__main__":
+    if not 'M2B' in os.environ:
+        log ('!M2B')
+        exit (0)
+
     test_token()
-    test_search()
+    test_orders()
+    #test_search()

@@ -1,6 +1,8 @@
 /docs
-/token_backups
 /.vscode/tasks.json
 __pycache__/
 .env
 .idea
+
+/token_backups
+/test_orders.xml
