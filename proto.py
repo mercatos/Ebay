@@ -8,6 +8,7 @@ import json
 import os
 import pymysql
 import requests
+import sqlean
 import xml.etree.ElementTree as ET
 
 
@@ -287,6 +288,7 @@ def test_orders(after_refresh=False):
     dfrom = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     log(f"test_orders] start_date: {dfrom}, end_date: {dtill}")
 
+    # https://gist.github.com/dreboard/4c57f38b1516cde552ed01feed751a01
     # cf. `function getOrderFromEbay` in “model-cron.php”
     xml_feed = '<?xml version="1.0" encoding="UTF-8"?>\n'
     xml_feed += '<GetOrdersRequest xmlns="urn:ebay:apis:eBLBaseComponents">\n'
@@ -372,11 +374,57 @@ def test_orders(after_refresh=False):
             log(f"item_id: {item_id}, title: {item_title}")
 
 
+def sqtune(schema):
+    return (
+        # Might increase WAL overhead for small updates (at least a page per update)
+        f"PRAGMA {schema}.page_size = 16384;"
+        f"PRAGMA {schema}.auto_vacuum = INCREMENTAL;"  # vacuum explicitly
+        f"PRAGMA {schema}.synchronous = NORMAL;"
+        f"PRAGMA temp_store = MEMORY;")
+
+
+def sqwal(schema):
+    return (
+        f"PRAGMA {schema}.journal_mode = WAL;"
+        # truncate unused WAL to 1 MiB
+        f"PRAGMA {schema}.journal_size_limit = 1048576;"
+        f"PRAGMA wal_autocheckpoint = 0;")  # checkpoints explicitly or at database close
+
+
+def sqcr(conn: sqlean.Connection):
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id INT NOT NULL,  -- OrderID without dashes
+            cr INT NOT NULL,  -- CreatedTime in UNIX seconds
+            xml TEXT NOT NULL,
+            PRIMARY KEY (id)
+        ) WITHOUT ROWID
+    """)
+    return conn
+
+
+def test_sqlite():
+    conn = sqlean.connect('d:/synced/mv-merc/ebay/orders.db3')
+    try:
+        conn.executescript(sqtune("main"))
+        conn.executescript(sqwal("main"))
+        sqcr(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT sqlite_version()")
+        version = cursor.fetchone()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+        log(f"SQLite {version[0]}; tables: {tables}")
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     if not 'M2B' in os.environ:
         log('!M2B')
         exit(0)
 
+    test_sqlite()
     test_token()
     test_orders()
     # test_search()
