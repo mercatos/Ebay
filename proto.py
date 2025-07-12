@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from datetime import datetime, timedelta
-from llog import log
+from llog import log, stdout2utf8
+import apsw
 import base62
 import base64
 import hashlib
@@ -8,7 +9,6 @@ import json
 import os
 import pymysql
 import requests
-import sqlean
 import xml.etree.ElementTree as ET
 
 def short_hash(text):
@@ -366,8 +366,8 @@ def sqwal(schema):
           f"PRAGMA {schema}.journal_size_limit = 1048576;"
           f"PRAGMA wal_autocheckpoint = 0;")  # checkpoints explicitly or at database close
 
-def sqcr(conn: sqlean.Connection):
-  conn.executescript("""
+def sqcr(conn: apsw.Connection):
+  conn.cursor().execute("""
         CREATE TABLE IF NOT EXISTS orders (
             id INT NOT NULL,  -- OrderID without dashes
             cr INT NOT NULL,  -- CreatedTime in UNIX seconds
@@ -377,26 +377,72 @@ def sqcr(conn: sqlean.Connection):
     """)
   return conn
 
-def test_sqlite():
-  conn = sqlean.connect('d:/synced/mv-merc/ebay/orders.db3')
+def sq_sync2local():
+  wmvmerc = os.environ.get('W_MV_MERC', r'd:\mv-merc')
+  lopa = os.path.join(wmvmerc, 'ebay-orders.db3')
+  zpa = r'd:\synced\mv-merc\ebay\orders.db3.zst'
+  zt = os.path.getmtime(zpa)
   try:
-    conn.executescript(sqtune("main"))
-    conn.executescript(sqwal("main"))
-    sqcr(conn)
-    cursor = conn.cursor()
-    cursor.execute("SELECT sqlite_version()")
-    version = cursor.fetchone()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = cursor.fetchall()
-    log(f"SQLite {version[0]}; tables: {tables}")
+    lot = os.path.getmtime(lopa)
+  except FileNotFoundError:
+    lot = 0
+  if lot < zt:
+    log(f"lopa {lot} < {zt} zpa")
+    from pyzstd import ZstdFile
+    log(f"{zpa} → {lopa}…")
+    zf = ZstdFile(zpa)
+    tepa = lopa + '.tmp'
+    with open(tepa, 'wb') as tf:
+      tf.write(zf.read())
+    zf.close()
+    tepa = lopa + '.tmp'
+    tedb3 = sqlean.connect(tepa)
+    result = tedb3.execute('PRAGMA quick_check').fetchone()
+    log(f"{tepa} quick_check: {result[0]}")
+    if not os.path.exists(tepa + '-wal'):
+      raise RuntimeError(f"! {tepa}-wal")
+    if result[0] != 'ok':
+      raise RuntimeError(f"{tepa} !quick_check: {result[0]}")
+    for suffix in ('', '-wal', '-shm'):
+      try:
+        os.remove(lopa + suffix)
+      except FileNotFoundError:
+        pass
+    tedb3.close()
+    os.rename(tepa, lopa)
+  return lopa
+
+def sqdaver(db3):
+  import ctypes
+  ver = ctypes.c_uint32()
+  rc = db3.filecontrol('main', apsw.SQLITE_FCNTL_DATA_VERSION, ctypes.addressof(ver))
+  if not rc:
+    raise RuntimeError('!sqdaver')
+  return ver.value
+
+def test_sqlite():
+  lopa = sq_sync2local()
+  db3 = apsw.Connection(lopa)
+  try:
+    db3.execute(sqtune('main'))
+    db3.execute(sqwal('main'))
+    sqcr(db3)
+    dbcur = db3.cursor()
+    dbcur.execute('SELECT sqlite_version()')
+    version = dbcur.fetchone()
+    dbcur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = dbcur.fetchall()
+    ver = sqdaver(db3)
+    log(f"SQLite {version[0]}; tables: {tables}; sqdaver {ver}")
   finally:
-    conn.close()
+    db3.close()
 
 if __name__ == "__main__":
   if not 'M2B' in os.environ:
     log('!M2B')
     exit(0)
 
+  stdout2utf8()
   test_sqlite()
   #test_token()
   #test_orders()

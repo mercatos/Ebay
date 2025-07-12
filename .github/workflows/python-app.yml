@@ -25,8 +25,7 @@ jobs:
         python-version: "3.13"
     - name: dependencies
       run: |
-        python -mpip install --upgrade pip
-        python -mpip install --user --upgrade -r requirements.txt
+        python -mpip install --user --no-cache-dir --upgrade -r requirements.txt
     - name: test
       env:
         APP_ID: ${{ secrets.APP_ID }}

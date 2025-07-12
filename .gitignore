@@ -3,6 +3,7 @@
 __pycache__/
 .env
 .idea
+/.cursor/mcp.json
 
 /token_backups
 /test_orders.xml
