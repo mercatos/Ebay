@@ -381,7 +381,10 @@ def sq_sync2local():
   wmvmerc = os.environ.get('W_MV_MERC', r'd:\mv-merc')
   lopa = os.path.join(wmvmerc, 'ebay-orders.db3')
   zpa = r'd:\synced\mv-merc\ebay\orders.db3.zst'
-  zt = os.path.getmtime(zpa)
+  try:
+    zt = os.path.getmtime(zpa)
+  except FileNotFoundError:
+    zt = 0
   try:
     lot = os.path.getmtime(lopa)
   except FileNotFoundError:
@@ -390,25 +393,24 @@ def sq_sync2local():
     log(f"lopa {lot} < {zt} zpa")
     from pyzstd import ZstdFile
     log(f"{zpa} → {lopa}…")
-    zf = ZstdFile(zpa)
     tepa = lopa + '.tmp'
-    with open(tepa, 'wb') as tf:
+    with ZstdFile(zpa) as zf, open(tepa, 'wb') as tf:
       tf.write(zf.read())
-    zf.close()
-    tepa = lopa + '.tmp'
-    tedb3 = sqlean.connect(tepa)
-    result = tedb3.execute('PRAGMA quick_check').fetchone()
-    log(f"{tepa} quick_check: {result[0]}")
-    if not os.path.exists(tepa + '-wal'):
-      raise RuntimeError(f"! {tepa}-wal")
-    if result[0] != 'ok':
-      raise RuntimeError(f"{tepa} !quick_check: {result[0]}")
+    tedb3 = apsw.Connection(tepa)
+    try:
+      qcr = tedb3.cursor().execute('PRAGMA quick_check').fetchone()
+      log(f"{tepa} quick_check: {qcr[0]}")
+      if qcr[0] != 'ok':
+        raise RuntimeError(f"{tepa} !quick_check: {qcr[0]}")
+      if not os.path.exists(tepa + '-wal'):
+        raise RuntimeError(f"! {tepa}-wal")
+    finally:
+      tedb3.close()
     for suffix in ('', '-wal', '-shm'):
       try:
         os.remove(lopa + suffix)
       except FileNotFoundError:
         pass
-    tedb3.close()
     os.rename(tepa, lopa)
   return lopa
 
@@ -420,22 +422,56 @@ def sqdaver(db3):
     raise RuntimeError('!sqdaver')
   return ver.value
 
+class OrdersDB:
+
+  def __init__(self):
+    self._db3 = None
+    self._lopa = None
+
+  def __enter__(self):
+    self._lopa = sq_sync2local()
+    self._db3 = apsw.Connection(self._lopa)
+    self._db3.execute(sqtune('main'))
+    self._db3.execute(sqwal('main'))
+    sqcr(self._db3)
+    self._start_ver = sqdaver(self._db3)
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    if self._db3 is not None:
+      ver = sqdaver(self._db3)
+      if self._start_ver < ver:
+        log(f"ver {self._start_ver} < {ver}, zstd to synced")
+        qcr = self._db3.cursor().execute('PRAGMA quick_check').fetchone()
+        if qcr[0] != 'ok':
+          # (We care not about closing the damaged database)
+          raise RuntimeError(f"!quick_check: {qcr[0]}")
+      self._db3.close()
+      self._db3 = None
+      if self._start_ver < ver:
+        import subprocess
+        ztepa = r'd:\synced\mv-merc\ebay\orders.db3.zst.tmp'
+        with open(self._lopa, 'rb') as src:
+          st = os.fstat(src.fileno())
+          mtime = st.st_mtime
+          with open(ztepa, 'wb') as dst:
+            # ⌥ see if/how “--rsyncable” affects “zstd -l orders.db3.zst”
+            subprocess.run(['zstd.exe', '--rsyncable', '-9'], stdin=src, stdout=dst, check=True)
+        os.replace(ztepa, ztepa[:-4])
+        os.utime(ztepa[:-4], (mtime, mtime))
+
+  @property
+  def co(self):
+    return self._db3
+
+  def cu(self):
+    return self._db3.cursor()
+
 def test_sqlite():
-  lopa = sq_sync2local()
-  db3 = apsw.Connection(lopa)
-  try:
-    db3.execute(sqtune('main'))
-    db3.execute(sqwal('main'))
-    sqcr(db3)
-    dbcur = db3.cursor()
-    dbcur.execute('SELECT sqlite_version()')
-    version = dbcur.fetchone()
-    dbcur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = dbcur.fetchall()
-    ver = sqdaver(db3)
-    log(f"SQLite {version[0]}; tables: {tables}; sqdaver {ver}")
-  finally:
-    db3.close()
+  with OrdersDB() as db:
+    version = db.cu().execute('SELECT sqlite_version()').fetchone()
+    tables = db.cu().execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    log(f"SQLite {version[0]}; {tables}; sqdaver {db._start_ver}")
 
 if __name__ == "__main__":
   if not 'M2B' in os.environ:
