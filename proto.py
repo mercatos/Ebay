@@ -1,6 +1,9 @@
 #!/usr/bin/env python
+#¹ consider running under WSL, as it will allow us to zstd --rsyncable to shm
+# and rsync --inplace from it to disk or else directly to server, avoiding unnecessary disk writes
+
 from datetime import datetime, timedelta
-from llog import log, stdout2utf8
+from llog import log, stdout2utf8, time2ics, ics2sec
 import apsw
 import base62
 import base64
@@ -9,10 +12,11 @@ import json
 import os
 import pymysql
 import requests
+import time
 import xml.etree.ElementTree as ET
 
 def short_hash(text):
-  """Generate a short hash of text for secure logging"""
+  '''Generate a short hash of text for secure logging'''
   return hashlib.md5(str(text).encode()).hexdigest()[:8] if text else "none"
 
 def get_db_connection():
@@ -41,6 +45,7 @@ def retrieve_token():
   token_result = cu.fetchone()
   token = token_result[0]
 
+  track_mysql_token(token)
   cu.execute("SELECT value FROM `oce_setting` WHERE `key` = 'ebay_general_settings'")
   oce_result = cu.fetchone()
 
@@ -81,7 +86,7 @@ def parse_token(token):
     raise ValueError(f"Error parsing token: {e}")
 
 def refresh_token_using_refresh_token():
-  """Refresh the access token using the refresh token without client secret"""
+  '''Refresh the access token using the refresh token without client secret'''
   # Get the original token JSON, in order to preserve refresh_token
   token, oce_setting = retrieve_token()
   old_token_json = token
@@ -122,7 +127,8 @@ def refresh_token_using_refresh_token():
             'Content-Type': 'application/x-www-form-urlencoded',
             'Authorization': f'Basic {base64.b64encode(f"{app_id}:{cert_id}".encode()).decode()}'
         },
-        data=data)
+        data=data
+    )
     log(f"api.ebay.com/identity/v1/oauth2/token: {response.status_code}")
 
     if response.status_code == 200:
@@ -150,8 +156,7 @@ def refresh_token_using_refresh_token():
       co = get_db_connection()
       cu = co.cursor()
 
-      cu.execute("UPDATE base_ebay.oce_kb_ebay_sites SET token = %s WHERE abbreviation = 'DE'",
-                 (new_token_json,))
+      cu.execute("UPDATE base_ebay.oce_kb_ebay_sites SET token = %s WHERE abbreviation = 'DE'", (new_token_json,))
       co.commit()
       log(f"oce_kb_ebay_sites commit ☑")
 
@@ -178,12 +183,14 @@ def search_items(search_string, limit=5, access_token=None):
     token_info = parse_token(token)
     access_token = token_info['access_token']
 
-  response = requests.get('https://api.ebay.com/buy/browse/v1/item_summary/search',
-                          params={
-                              'q': search_string,
-                              'limit': limit
-                          },
-                          headers={'Authorization': f"Bearer {access_token}"})
+  response = requests.get(
+      'https://api.ebay.com/buy/browse/v1/item_summary/search',
+      params={
+          'q': search_string,
+          'limit': limit
+      },
+      headers={'Authorization': f"Bearer {access_token}"}
+  )
 
   if response.status_code == 401:
     error_text = response.text
@@ -358,23 +365,31 @@ def sqtune(schema):
       f"PRAGMA {schema}.page_size = 16384;"
       f"PRAGMA {schema}.auto_vacuum = INCREMENTAL;"  # vacuum explicitly
       f"PRAGMA {schema}.synchronous = NORMAL;"
-      f"PRAGMA temp_store = MEMORY;")
+      f"PRAGMA temp_store = MEMORY;"
+  )
 
 def sqwal(schema):
-  return (f"PRAGMA {schema}.journal_mode = WAL;"
-          # truncate unused WAL to 1 MiB
-          f"PRAGMA {schema}.journal_size_limit = 1048576;"
-          f"PRAGMA wal_autocheckpoint = 0;")  # checkpoints explicitly or at database close
+  return (
+      f"PRAGMA {schema}.journal_mode = WAL;"
+      # truncate unused WAL to 1 MiB
+      f"PRAGMA {schema}.journal_size_limit = 1048576;"
+      f"PRAGMA wal_autocheckpoint = 0;"
+  )  # checkpoints explicitly or at database close
 
 def sqcr(conn: apsw.Connection):
-  conn.cursor().execute("""
-        CREATE TABLE IF NOT EXISTS orders (
-            id INT NOT NULL,  -- OrderID without dashes
-            cr INT NOT NULL,  -- CreatedTime in UNIX seconds
-            xml TEXT NOT NULL,
-            PRIMARY KEY (id)
-        ) WITHOUT ROWID
-    """)
+  q = """CREATE TABLE IF NOT EXISTS orders (
+    id INT NOT NULL,  -- OrderID without dashes
+    cr INT NOT NULL,  -- CreatedTime in UNIX seconds
+    xml TEXT NOT NULL,
+    PRIMARY KEY (id)
+  ) WITHOUT ROWID"""
+  conn.cursor().execute(q)
+  q = """CREATE TABLE IF NOT EXISTS kv (
+    k TEXT NOT NULL,
+    v BLOB NOT NULL,
+    PRIMARY KEY (k)
+  ) WITHOUT ROWID"""
+  conn.cursor().execute(q)
   return conn
 
 def sq_sync2local():
@@ -450,7 +465,7 @@ class OrdersDB:
       self._db3 = None
       if self._start_ver < ver:
         import subprocess
-        ztepa = r'd:\synced\mv-merc\ebay\orders.db3.zst.tmp'
+        ztepa = r'd:/synced/mv-merc/ebay/orders.db3.zst.tmp'
         with open(self._lopa, 'rb') as src:
           st = os.fstat(src.fileno())
           mtime = st.st_mtime
@@ -467,6 +482,57 @@ class OrdersDB:
   def cu(self):
     return self._db3.cursor()
 
+def track_mysql_token(token):
+  token_bytes = token.encode('utf-8') if isinstance(token, str) else bytes(token)
+  token_hash = hashlib.sha256(token_bytes).hexdigest()
+  refresh_expires_in = parse_token(token)['refresh_expires_in']
+
+  sec = time.time()
+  now_ics = str(time2ics(time.gmtime(sec), sec))
+  lm_ics = now_ics
+  lm_sec = sec
+
+  with OrdersDB() as db:
+    sql = 'SELECT k, v FROM kv WHERE k IN (?, ?)'
+    rows = db.cu().execute(sql, ('msqTokHash', 'msqTokLM'))
+    metadata = {}
+    for key, value in rows:
+      if isinstance(value, bytes):
+        value = value.decode('ascii', 'replace')
+      metadata[key] = str(value)
+
+    # Keep msqTokLM stable while the hash matches; per-read updates would make inferred token age always zero.
+    needs_write = metadata.get('msqTokHash') != token_hash
+    if not needs_write:
+      try:
+        lm_ics = metadata['msqTokLM']
+        lm_sec = ics2sec(int(lm_ics))
+      except (KeyError, OverflowError, TypeError, ValueError):
+        needs_write = True
+
+    if needs_write:
+      lm_ics = now_ics
+      lm_sec = sec
+      values = (
+          ('msqTokHash', token_hash.encode('ascii')),
+          ('msqTokLM', lm_ics.encode('ascii')),
+      )
+      sql = 'INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v'
+      with db.co:
+        db.cu().executemany(sql, values)
+
+  age_sec = sec - lm_sec
+  age = timedelta(seconds=max(0, int(age_sec)))
+
+  expiry_ics = 'unknown'
+  if 0 < refresh_expires_in:
+    expiry_sec = lm_sec + refresh_expires_in
+    expiry_ics = str(time2ics(time.gmtime(expiry_sec), expiry_sec))
+
+  summary = f"mysql token {token_hash[:8]} LM={lm_ics} age={age}"
+  # MySQL token might expire every two years, MV would need to re-auth in OpenCart then
+  log(f"{summary} refresh_expires_in={refresh_expires_in} projected={expiry_ics}")
+
 def test_sqlite():
   with OrdersDB() as db:
     version = db.cu().execute('SELECT sqlite_version()').fetchone()
@@ -480,6 +546,7 @@ if __name__ == "__main__":
 
   stdout2utf8()
   test_sqlite()
-  #test_token()
+  test_token()
+  refresh_token_using_refresh_token()
   #test_orders()
   # test_search()
